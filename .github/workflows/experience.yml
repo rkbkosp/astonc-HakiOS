@@ -1,0 +1,72 @@
+name: Build astonc experience
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: astonc-experience
+  cancel-in-progress: false
+jobs:
+  build:
+    # Userland artifacts contain locally generated Apple components. Keep this personal.
+    if: github.event.repository.private
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      HACKIOS_HOME: /home/runner/hackios
+      THEOS: /home/runner/theos
+      JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make room on the disposable runner
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h .
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang lld llvm nasm lz4 \
+            gcc-aarch64-linux-gnu mtools dosfstools uuid-dev python3-venv \
+            7zip flex bison m4 autoconf automake libtool libssl-dev \
+            device-tree-compiler xz-utils unzip curl git acpica-tools
+          mkdir -p "$HOME/.local/bin"
+          if ! command -v 7z >/dev/null; then
+            ln -s "$(command -v 7zz)" "$HOME/.local/bin/7z"
+          fi
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Fetch pinned sources and toolchain
+        run: bash scripts/ci_experience.sh setup
+      - name: Build patched UEFI and USB loader
+        run: bash scripts/ci_experience.sh uefi
+      - name: Save UEFI first-test image
+        uses: actions/upload-artifact@v4
+        with:
+          name: astonc-uefi-first-test
+          path: out/boot-aston-uefi.img
+          if-no-files-found: error
+          retention-days: 1
+      - name: Build XNU and touch driver
+        run: bash scripts/ci_experience.sh kernel
+      - name: Fetch iOS components and generate RAM images
+        run: bash scripts/ci_experience.sh images
+      - name: Validate and assemble Mac package
+        run: bash scripts/ci_experience.sh bundle
+      - name: Save personal experience package
+        uses: actions/upload-artifact@v4
+        with:
+          name: astonc-mac-experience
+          path: out/astonc-mac-experience.tar
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+      - name: Save diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astonc-build-logs
+          path: |
+            /home/runner/hackios/logs/*.log
+            /home/runner/hackios/hackios-os/xnu-deps/*.log
+            /home/runner/hackios/hackios-os/sysimage/*log
+            out/build-provenance.txt
+          retention-days: 3

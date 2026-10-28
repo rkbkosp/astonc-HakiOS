@@ -1,0 +1,84 @@
+# astonc 体验准备（Mac + GitHub Actions）
+
+目标设备：一加 Ace 3 / astonc / PJE110，原厂系统，16GB RAM，已解锁 BL。
+上游实测环境是 PixelOS + SukiSU，原厂系统兼容性尚待验证。
+
+## 构建与下载
+
+工作流 `.github/workflows/experience.yml` 仅手动触发，且仅在私有仓库运行。
+在 GitHub Actions 的 Build astonc experience 中点击 Run workflow。
+完整构建成功后下载 `astonc-mac-experience` artifact；该私人体验包保留一天。
+解开 artifact 的 zip 后，解开其中的 tar，进入解包目录：
+
+```bash
+tar -xf astonc-mac-experience.tar -C /path/to/experience
+cd /path/to/experience
+shasum -a 256 -c SHA256SUMS
+python3 port/hackios-aston.py status
+```
+
+构建尚未完成前不要执行后面的启动步骤。流水线未经云端成功运行前，不能认为镜像已就绪。
+工具链使用发行版 latest，实际下载的 SHA256、源码版本会写入 out/build-provenance.txt。
+内核编译返回非零时保留日志，且要求存在新构建的 arm64 Mach-O 内核；仍需人工复核编译日志。
+
+## 上机前
+
+先备份手机重要数据，记录原厂系统完整版本。不要重新解锁、重新上锁 BL、刷分区或擦除数据。
+先正常启动 Android，开启 USB 调试并在手机上授权 Mac：
+
+```bash
+adb devices -l
+adb shell getprop ro.product.model
+adb shell getprop ro.product.device
+adb shell getprop ro.build.display.id
+adb shell cat /proc/meminfo
+```
+
+核对确为目标设备后进入 bootloader fastboot（不要用 fastbootd）：
+
+```bash
+adb reboot bootloader
+fastboot devices
+fastboot getvar product
+fastboot getvar unlocked
+fastboot getvar is-userspace
+```
+
+上面 `adb reboot bootloader` 会重启设备。只连接这一台手机；项目主机脚本没有多设备选择功能。
+可先运行 `python3 port/hackios-aston.py boot-uefi` 查看 UEFI 日志，之后长按电源返回 Android，
+再重新进入 bootloader fastboot 执行完整体验。
+
+## 完整体验
+
+```bash
+python3 port/hackios-aston.py boot-loader
+python3 port/hackios-aston.py ramdisk
+python3 port/hackios-aston.py run --secs 900
+```
+
+不要省略 `--secs 900`：脚本默认只有 30 秒，短于项目记录的约 3.5 分钟桌面启动时间。
+system.apfs 约 2.5GB，每次重新启动 loader 都要重新上传，README 的实测上传时间约 91 秒。
+run 命令会等待运行结束；内核运行中 USB fastboot 可能失联。
+按项目说明可长按电源约 12 秒退出；到时返回 loader 或重启，具体以设备表现为准。
+这不是恢复系统保证，异常情况需结合屏幕与日志判断。
+
+预期可体验桌面和触摸，约 10fps；Wi-Fi、蓝牙、蜂窝、音频、Apple ID 当前不支持。
+
+## 写入行为与日志
+
+`fastboot boot` 本身是 RAM 启动，但整个项目不能称为完全不写分区：
+
+- 本仓库 XnuLoader.c 的 FlushLog 会寻找 rawdump / logdump / oplusrawdump 并调用 WriteBlocks。
+- 上游 xnuloader 的 write_logs 也会向日志分区写入。
+- 因此默认构建保留了项目原有日志行为；未验证其对这台原厂系统的影响。
+
+readlog 需要手机处于 xnuloader，若已回到 Android，要重新进入 bootloader 并启动 loader：
+
+```bash
+python3 port/hackios-aston.py readlog
+```
+
+由于重新启动 UEFI/loader 本身也可能写日志，不能保证旧日志完整保留。
+不要添加 `ufs_write=1`，不要使用上游的分区安装流程。
+
+参考：https://github.com/error-10/astonc-HakiOS （准备时 commit 87e76d5c63496f874905ed6c898ec3c3da2675aa）
