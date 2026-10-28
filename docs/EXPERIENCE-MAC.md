@@ -54,7 +54,7 @@ fastboot getvar is-userspace
 ```
 
 上面 `adb reboot bootloader` 会重启设备。只连接这一台手机；项目主机脚本没有多设备选择功能。
-可先运行 `python3 port/hackios-aston.py boot-uefi` 查看 UEFI 日志，之后长按电源返回 Android，
+可先运行 `python3 port/hackios-aston.py boot-uefi` 查看 UEFI 日志，之后同时长按电源键和音量上键返回 Android，
 再重新进入 bootloader fastboot 执行完整体验。
 
 ## 完整体验
@@ -68,7 +68,12 @@ python3 port/hackios-aston.py run --secs 900
 不要省略 `--secs 900`：脚本默认只有 30 秒，短于项目记录的约 3.5 分钟桌面启动时间。
 system.apfs 约 2.5GB，每次重新启动 loader 都要重新上传，README 的实测上传时间约 91 秒。
 run 命令会等待运行结束；内核运行中 USB fastboot 可能失联。
-按项目说明可长按电源约 12 秒退出；到时返回 loader 或重启，具体以设备表现为准。
+本机实测：单独长按电源未能退出；同时长按 **电源键 + 音量上键 15–20 秒** 可强制重启回 Android。
+黑屏或振动后松开按键；若停在关机状态，再单按电源开机。
+内核运行期间即便 macOS 仍显示 xnuloader USB 标识，fastboot reboot 也可能失败，不能保证能从电脑重启。
+900 秒参数是请求运行时限，不能保证内核挂死后仍会按时退出。
+不要使用关机后按双音量键插线的方式进入 fastboot：本机实测该组合进入 Qualcomm EDL 9008。
+正常 Android 下使用上面的 adb reboot bootloader。
 这不是恢复系统保证，异常情况需结合屏幕与日志判断。
 
 预期可体验桌面和触摸，约 10fps；Wi-Fi、蓝牙、蜂窝、音频、Apple ID 当前不支持。
