@@ -8,10 +8,15 @@
 工作流 `.github/workflows/experience.yml` 仅手动触发。
 公开 fork 构建 UEFI / 内核；私有构建仓库额外生成并打包 iOS 用户态，提供完整体验包。
 在 GitHub Actions 的 Build astonc experience 中点击 Run workflow。
-完整构建成功后下载 `astonc-mac-experience` artifact；该私人体验包保留一天。
-解开 artifact 的 zip 后，解开其中的 tar，进入解包目录：
+完整构建成功后，在私有仓库 Releases 下载 `astonc-mac-experience.tar.part-*` 与
+`PARTS-SHA256SUMS`。账号的 artifact 存储配额已满，因此私人产物改存 Release，
+每个分片小于 2GiB。它们不会自动过期，体验后可自行删除该私人 Release。
+先在分片目录校验并合并（校验文件中的路径带 out/，请将分片放入 out/ 子目录）：
 
 ```bash
+shasum -a 256 -c PARTS-SHA256SUMS
+cat out/astonc-mac-experience.tar.part-* > astonc-mac-experience.tar
+mkdir -p /path/to/experience
 tar -xf astonc-mac-experience.tar -C /path/to/experience
 cd /path/to/experience
 shasum -a 256 -c SHA256SUMS

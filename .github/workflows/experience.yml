@@ -9,13 +9,23 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     timeout-minutes: 180
     env:
       HACKIOS_HOME: /home/runner/hackios
       THEOS: /home/runner/theos
       JOBS: '2'
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: experience-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
+      - name: Create private build release
+        if: github.event.repository.private
+        run: |
+          gh release create "$RELEASE_TAG" --prerelease --target "$GITHUB_SHA" \
+            --title "astonc experience $GITHUB_RUN_ID" \
+            --notes "Personal build from $GITHUB_SHA. Hardware compatibility is not yet verified."
       - name: Make room on the disposable runner
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
@@ -37,21 +47,31 @@ jobs:
       - name: Build patched UEFI and USB loader
         run: bash scripts/ci_experience.sh uefi
       - name: Save UEFI first-test image
+        if: '!github.event.repository.private'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: astonc-uefi-first-test
           path: out/boot-aston-uefi.img
           if-no-files-found: error
           retention-days: 1
+      - name: Save private UEFI and loader
+        if: github.event.repository.private
+        run: gh release upload "$RELEASE_TAG" out/boot-aston-uefi.img out/boot-aston-xnu.img out/loader-aston.efi
       - name: Build XNU and touch driver
         run: bash scripts/ci_experience.sh kernel
       - name: Save open-source kernel
+        if: '!github.event.repository.private'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: astonc-xnu-kernel
           path: out/mach.development.bcm2837
           if-no-files-found: error
           retention-days: 3
+      - name: Save private kernel
+        if: github.event.repository.private
+        run: gh release upload "$RELEASE_TAG" out/mach.development.bcm2837
       - name: Fetch iOS components and generate RAM images
         if: github.event.repository.private
         run: bash scripts/ci_experience.sh images
@@ -60,21 +80,16 @@ jobs:
         run: bash scripts/ci_experience.sh bundle
       - name: Save personal experience package
         if: github.event.repository.private
-        uses: actions/upload-artifact@v4
-        with:
-          name: astonc-mac-experience
-          path: out/astonc-mac-experience.tar
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 1
+        run: |
+          # Release assets are limited to 2 GiB each, so split the large personal RAM package.
+          split -b 1900M -d out/astonc-mac-experience.tar out/astonc-mac-experience.tar.part-
+          sha256sum out/astonc-mac-experience.tar.part-* > out/PARTS-SHA256SUMS
+          gh release upload "$RELEASE_TAG" out/astonc-mac-experience.tar.part-* out/PARTS-SHA256SUMS
       - name: Save diagnostic logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: astonc-build-logs
-          path: |
-            /home/runner/hackios/logs/*.log
-            /home/runner/hackios/hackios-os/xnu-deps/*.log
-            /home/runner/hackios/hackios-os/sysimage/*log
-            out/build-provenance.txt
-          retention-days: 3
+        if: always() && github.event.repository.private
+        run: |
+          mkdir -p out/diagnostics
+          find /home/runner/hackios -type f -name '*.log' -exec cp --parents '{}' out/diagnostics/ \; || true
+          cp out/build-provenance.txt out/diagnostics/ 2>/dev/null || true
+          tar -czf out/astonc-build-logs.tar.gz -C out/diagnostics .
+          gh release upload "$RELEASE_TAG" out/astonc-build-logs.tar.gz
