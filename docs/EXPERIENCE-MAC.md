@@ -5,7 +5,8 @@
 
 ## 构建与下载
 
-工作流 `.github/workflows/experience.yml` 仅手动触发，且仅在私有仓库运行。
+工作流 `.github/workflows/experience.yml` 仅手动触发。
+公开 fork 构建 UEFI / 内核；私有构建仓库额外生成并打包 iOS 用户态，提供完整体验包。
 在 GitHub Actions 的 Build astonc experience 中点击 Run workflow。
 完整构建成功后下载 `astonc-mac-experience` artifact；该私人体验包保留一天。
 解开 artifact 的 zip 后，解开其中的 tar，进入解包目录：
