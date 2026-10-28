@@ -1,6 +1,12 @@
 name: Build astonc experience
 on:
   workflow_dispatch:
+    inputs:
+      reuse_build:
+        description: 'Private Release tag whose UEFI/loader/kernel should be reused (leave empty for full build)'
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -15,7 +21,8 @@ jobs:
     env:
       HACKIOS_HOME: /home/runner/hackios
       THEOS: /home/runner/theos
-      JOBS: '2'
+      XNU_JOBS: '2'
+      REUSE_BUILD: ${{ inputs.reuse_build }}
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: experience-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -44,7 +51,11 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Fetch pinned sources and toolchain
         run: bash scripts/ci_experience.sh setup
+      - name: Restore successful UEFI, loader and kernel
+        if: inputs.reuse_build != ''
+        run: bash scripts/ci_experience.sh restore
       - name: Build patched UEFI and USB loader
+        if: inputs.reuse_build == ''
         run: bash scripts/ci_experience.sh uefi
       - name: Save UEFI first-test image
         if: '!github.event.repository.private'
@@ -59,6 +70,7 @@ jobs:
         if: github.event.repository.private
         run: gh release upload "$RELEASE_TAG" out/boot-aston-uefi.img out/boot-aston-xnu.img out/loader-aston.efi
       - name: Build XNU and touch driver
+        if: inputs.reuse_build == ''
         run: bash scripts/ci_experience.sh kernel
       - name: Save open-source kernel
         if: '!github.event.repository.private'

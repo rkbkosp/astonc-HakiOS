@@ -22,10 +22,12 @@ case "${1:-}" in
     [ "$(uname -sm)" = 'Linux x86_64' ] || { echo 'Requires Linux x86-64' >&2; exit 1; }
     fetch_commit https://github.com/oosexgang/hackios-xnu-kernel.git "$HS" \
       88513176b1e96ecf0b764cd62c6f4e6ac71345e3
-    fetch_commit https://github.com/Project-Silicium/Mu-Silicium.git "$MU_DIR" \
-      "$(cat port/devices/oneplus-aston/uefi/BASE)"
-    git -C "$MU_DIR" submodule update --init --recursive --depth 1
-    cp -a port/devices/oneplus-aston/uefi/files/. "$MU_DIR/"
+    if [ -z "${REUSE_BUILD:-}" ]; then
+      fetch_commit https://github.com/Project-Silicium/Mu-Silicium.git "$MU_DIR" \
+        "$(cat port/devices/oneplus-aston/uefi/BASE)"
+      git -C "$MU_DIR" submodule update --init --recursive --depth 1
+      cp -a port/devices/oneplus-aston/uefi/files/. "$MU_DIR/"
+    fi
     mkdir -p "$THEOS/toolchain/linux/iphone" "$THEOS/sdks"
     curl -fL --retry 3 -o "$HACKIOS_HOME/iOSToolchain.tar.xz" \
       https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz
@@ -34,13 +36,31 @@ case "${1:-}" in
     git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git "$THEOS/sdks-git"
     git -C "$THEOS/sdks-git" sparse-checkout set iPhoneOS16.5.sdk
     ln -s "$THEOS/sdks-git/iPhoneOS16.5.sdk" "$THEOS/sdks/iPhoneOS16.5.sdk"
+    mkdir -p "$HOME/.local/bin"
+    curl -fL --retry 3 -o "$HOME/.local/bin/ldid" \
+      https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
+    chmod +x "$HOME/.local/bin/ldid"
+    # Userland only needs cctools/SDK, not a rebuilt XNU dependency tree.
+    if [ -n "${REUSE_BUILD:-}" ]; then
+      ln -s "$THEOS/toolchain/linux/iphone/bin/ld" "$HS/xnu-deps/host/bin/ld64"
+    fi
     {
       git rev-parse HEAD
       git -C "$HS" rev-parse HEAD
-      git -C "$MU_DIR" rev-parse HEAD
+      cat port/devices/oneplus-aston/uefi/BASE
       git -C "$THEOS/sdks-git" rev-parse HEAD
       sha256sum "$HACKIOS_HOME/iOSToolchain.tar.xz"
+      sha256sum "$HOME/.local/bin/ldid"
     } > "$OUT/build-provenance.txt"
+    ;;
+  restore)
+    [[ ${REUSE_BUILD:-} =~ ^experience-[0-9]+-[0-9]+$ ]] || { echo 'Invalid build release tag' >&2; exit 1; }
+    gh release download "$REUSE_BUILD" --dir "$OUT" \
+      --pattern boot-aston-uefi.img --pattern boot-aston-xnu.img \
+      --pattern loader-aston.efi --pattern mach.development.bcm2837
+    test -s "$OUT/loader-aston.efi"
+    file "$OUT/mach.development.bcm2837" | grep 'Mach-O.*arm64'
+    printf 'UEFI/loader/kernel reused from: %s\n' "$REUSE_BUILD" >> "$OUT/build-provenance.txt"
     ;;
   uefi)
     bash scripts/build_uefi_aston.sh
@@ -57,9 +77,9 @@ case "${1:-}" in
     (cd "$HS" && bash xnu/apply.sh)
     bash scripts/install_touch_aston.sh
     # Use fail-fast setup; the original wrapper ignores dependency failures.
-    (cd "$HS" && bash xnu-deps/setup.sh) 2>&1 | tee "$HACKIOS_HOME/logs/xnu-deps.log"
+    (cd "$HS" && JOBS="${XNU_JOBS:-2}" bash xnu-deps/setup.sh) 2>&1 | tee "$HACKIOS_HOME/logs/xnu-deps.log"
     set +e
-    (cd "$HS" && bash xnu-build.sh -j"${JOBS:-2}" -k) > "$HACKIOS_HOME/logs/xnu-build.log" 2>&1
+    (cd "$HS" && bash xnu-build.sh -j"${XNU_JOBS:-2}" -k) > "$HACKIOS_HOME/logs/xnu-build.log" 2>&1
     rc=$?
     set -e
     tail -60 "$HACKIOS_HOME/logs/xnu-build.log"
@@ -72,7 +92,8 @@ case "${1:-}" in
     ;;
   images)
     (cd "$HS" && make fetch) 2>&1 | tee "$HACKIOS_HOME/logs/fetch.log"
-    (cd "$HS" && REST=1 bash userland/build.sh) 2>&1 | tee "$HACKIOS_HOME/logs/images.log"
+    # JOBS is a list of launchd labels in userland, never a compiler parallelism count.
+    (cd "$HS" && env -u JOBS REST=1 bash userland/build.sh) 2>&1 | tee "$HACKIOS_HOME/logs/images.log"
     cp "$HS/userland/system.apfs" "$HS/userland/root.apfs" "$OUT/"
     ;;
   bundle)
@@ -99,5 +120,5 @@ PY
     (cd "$B" && find out -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
     tar -cf "$OUT/astonc-mac-experience.tar" -C "$B" .
     ;;
-  *) echo "Usage: $0 setup|uefi|kernel|images|bundle" >&2; exit 2 ;;
+  *) echo "Usage: $0 setup|restore|uefi|kernel|images|bundle" >&2; exit 2 ;;
 esac

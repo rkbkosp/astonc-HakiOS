@@ -8,6 +8,9 @@
 工作流 `.github/workflows/experience.yml` 仅手动触发。
 公开 fork 构建 UEFI / 内核；私有构建仓库额外生成并打包 iOS 用户态，提供完整体验包。
 在 GitHub Actions 的 Build astonc experience 中点击 Run workflow。
+若已有成功的 UEFI / loader / 内核，可将 `reuse_build` 填为对应的私人 Release 标签，
+例如 `experience-40703818797-1`，将跳过 Mu-Silicium 源码拉取和 UEFI / 内核编译，
+直接恢复产物并生成用户态。该模式仍需下载、解包 Apple 用户态文件。
 完整构建成功后，在私有仓库 Releases 下载 `astonc-mac-experience.tar.part-*` 与
 `PARTS-SHA256SUMS`。账号的 artifact 存储配额已满，因此私人产物改存 Release，
 每个分片小于 2GiB。它们不会自动过期，体验后可自行删除该私人 Release。
